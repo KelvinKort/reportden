@@ -29,36 +29,51 @@ const fmtMoney = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 
 const fmtPct = (n) => `${(Number(n || 0) * 100).toFixed(2)}%`;
 
 function showApp() {
-  loginScreen.classList.add('hidden');
-  appRoot.classList.remove('hidden');
+  if (loginScreen) loginScreen.style.display = 'none';
+  if (appRoot) appRoot.classList.remove('hidden');
 }
 
 function showLogin() {
-  appRoot.classList.add('hidden');
-  loginScreen.classList.remove('hidden');
+  if (appRoot) appRoot.classList.add('hidden');
+  if (loginScreen) loginScreen.style.display = 'flex';
 }
 
 function checkSession() {
-  if (sessionStorage.getItem(SESSION_KEY) === 'ok') {
-    showApp();
-  } else {
+  try {
+    if (sessionStorage.getItem(SESSION_KEY) === 'ok') {
+      showApp();
+    } else {
+      showLogin();
+    }
+  } catch (e) {
     showLogin();
   }
 }
 
 function handleLogin() {
-  if (passwordInput.value === DASH_PASSWORD) {
-    sessionStorage.setItem(SESSION_KEY, 'ok');
+  if (!passwordInput || !loginError) {
+    alert('Ошибка интерфейса входа');
+    return;
+  }
+
+  const entered = String(passwordInput.value || '').trim();
+  if (entered === DASH_PASSWORD) {
+    try {
+      sessionStorage.setItem(SESSION_KEY, 'ok');
+    } catch (e) {}
     loginError.textContent = '';
     showApp();
+    loadAll();
   } else {
     loginError.textContent = 'Неверный пароль';
   }
 }
 
 function handleLogout() {
-  sessionStorage.removeItem(SESSION_KEY);
-  passwordInput.value = '';
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch (e) {}
+  if (passwordInput) passwordInput.value = '';
   showLogin();
 }
 
