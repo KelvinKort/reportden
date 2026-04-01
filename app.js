@@ -3,8 +3,11 @@ const state = {
   deals: [],
   plans: [],
   managers: [],
-  rows: []
+  rows: [],
+  debug: {}
 };
+
+const DEFAULT_ENDPOINT = 'https://script.google.com/macros/s/AKfycbx7BOwirzdq0Eq839ywIvmxWVkH_1lVTvuKL7JPjfqtRZFWgPUcc33TfmtVH02WruI/exec';
 
 const baseUrlInput = document.getElementById('baseUrlInput');
 const dateFromInput = document.getElementById('dateFrom');
@@ -18,24 +21,18 @@ const diagnostics = document.getElementById('diagnostics');
 const reportDateLabel = document.getElementById('reportDateLabel');
 
 const fmtMoney = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Number(n || 0));
-const fmtPct = (n) => `${(Number(n || 0) * 100).toFixed(2)}%`;
 
-async function fetchDataset(baseUrl, dataset) {
-  const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}dataset=${dataset}`;
-  const response = await fetch(url, { method: 'GET', redirect: 'follow' });
-  const text = await response.text();
-  if (!response.ok) throw new Error(`HTTP ${response.status} for ${dataset}`);
-  const parsed = JSON.parse(text.trim());
-  if (!Array.isArray(parsed)) throw new Error(`Dataset ${dataset} is not array`);
-  return parsed;
-}
-
-function parseRuDate(value) {
+function parseLooseDate(value) {
   if (!value) return null;
   if (value instanceof Date && !isNaN(value)) return value;
   const s = String(value).trim();
-  const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+
+  let m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -47,7 +44,17 @@ function ymd(date) {
   return `${y}-${m}-${d}`;
 }
 
+async function fetchDataset(baseUrl, dataset) {
+  const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}dataset=${dataset}`;
+  const response = await fetch(url, { method: 'GET', redirect: 'follow' });
+  const text = await response.text();
+  const parsed = JSON.parse(text.trim());
+  if (!Array.isArray(parsed)) throw new Error(`Dataset ${dataset} is not array`);
+  return parsed;
+}
+
 function populateManagerFilter() {
+  const selected = managerSelect.value || 'all';
   const managers = [...new Set(state.rows.map(r => r.manager_name).filter(Boolean))].sort();
   managerSelect.innerHTML = '<option value="all">Все менеджеры</option>';
   managers.forEach(name => {
@@ -56,11 +63,12 @@ function populateManagerFilter() {
     option.textContent = name;
     managerSelect.appendChild(option);
   });
+  if ([...managerSelect.options].some(o => o.value === selected)) managerSelect.value = selected;
 }
 
 function aggregateForRange() {
-  const from = parseRuDate(dateFromInput.value);
-  const to = parseRuDate(dateToInput.value);
+  const from = parseLooseDate(dateFromInput.value);
+  const to = parseLooseDate(dateToInput.value);
   const selectedManager = managerSelect.value;
 
   const managerMap = {};
@@ -83,16 +91,23 @@ function aggregateForRange() {
     return managerMap[key];
   };
 
+  let validPaymentDates = 0;
+  let validDealDates = 0;
+
   state.payments.forEach(row => {
-    const dt = parseRuDate(row.payment_date);
-    if (!dt || (from && dt < from) || (to && dt > to)) return;
+    const dt = parseLooseDate(row.payment_date);
+    if (!dt) return;
+    validPaymentDates++;
+    if ((from && dt < from) || (to && dt > to)) return;
     const manager = ensure(row.manager_name);
     manager.fact_payments += Number(row.payment_amount || 0);
   });
 
   state.deals.forEach(row => {
-    const dt = parseRuDate(row.date_create);
-    if (!dt || (from && dt < from) || (to && dt > to)) return;
+    const dt = parseLooseDate(row.date_create);
+    if (!dt) return;
+    validDealDates++;
+    if ((from && dt < from) || (to && dt > to)) return;
     const manager = ensure(row.manager_name);
     const amount = Number(row.amount || 0);
     const isWon = String(row.is_won || '') === 'Да';
@@ -114,6 +129,8 @@ function aggregateForRange() {
     }
   });
 
+  state.debug.validPaymentDates = validPaymentDates;
+  state.debug.validDealDates = validDealDates;
   state.rows = Object.values(managerMap).filter(r => selectedManager === 'all' || r.manager_name === selectedManager);
 }
 
@@ -168,9 +185,8 @@ function renderTable() {
 }
 
 function renderSummary() {
-  const totalManagers = state.rows.length;
   summaryPanel.innerHTML = [
-    ['Менеджеров в выборке', totalManagers],
+    ['Менеджеров в выборке', state.rows.length],
     ['Оплат загружено', state.payments.length],
     ['Сделок загружено', state.deals.length],
     ['План', 'Для произвольного периода пока не рассчитывается']
@@ -178,10 +194,17 @@ function renderSummary() {
 }
 
 function renderDiagnostics() {
+  const samplePayment = state.payments[0] ? JSON.stringify(state.payments[0]).slice(0, 220) : '—';
+  const sampleDeal = state.deals[0] ? JSON.stringify(state.deals[0]).slice(0, 220) : '—';
   diagnostics.innerHTML = `
+    <p>Endpoint: <b>${escapeHtml(baseUrlInput.value || '')}</b></p>
     <p>Строк fact_payments: <b>${state.payments.length}</b></p>
     <p>Строк fact_deals: <b>${state.deals.length}</b></p>
+    <p>Валидных дат оплат: <b>${state.debug.validPaymentDates || 0}</b></p>
+    <p>Валидных дат сделок: <b>${state.debug.validDealDates || 0}</b></p>
     <p>Менеджеров в диапазоне: <b>${state.rows.length}</b></p>
+    <p>Sample payment: <code>${escapeHtml(samplePayment)}</code></p>
+    <p>Sample deal: <code>${escapeHtml(sampleDeal)}</code></p>
   `;
 }
 
@@ -213,9 +236,10 @@ async function loadAll() {
     state.payments = payments;
     state.deals = deals;
     state.plans = plans;
+    state.debug = {};
 
-    const paymentDates = payments.map(r => parseRuDate(r.payment_date)).filter(Boolean);
-    const dealDates = deals.map(r => parseRuDate(r.date_create)).filter(Boolean);
+    const paymentDates = payments.map(r => parseLooseDate(r.payment_date)).filter(Boolean);
+    const dealDates = deals.map(r => parseLooseDate(r.date_create)).filter(Boolean);
     const allDates = [...paymentDates, ...dealDates].sort((a, b) => a - b);
 
     if (allDates.length) {
@@ -229,6 +253,7 @@ async function loadAll() {
   }
 }
 
+baseUrlInput.value = DEFAULT_ENDPOINT;
 loadBtn.addEventListener('click', loadAll);
 managerSelect.addEventListener('change', render);
 dateFromInput.addEventListener('change', render);
