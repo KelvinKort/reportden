@@ -41,9 +41,11 @@ async function loadData() {
 
   const text = await fetch(url).then(r => r.text());
   let rows = [];
+  const trimmed = text.trim();
 
-  if (url.toLowerCase().includes('json')) {
-    rows = JSON.parse(text);
+  if (trimmed.startsWith('[') || trimmed.startsWith('{') || url.toLowerCase().includes('json') || url.includes('/exec')) {
+    rows = JSON.parse(trimmed);
+    if (!Array.isArray(rows) && rows.rows) rows = rows.rows;
   } else {
     rows = parseCsv(text);
   }
