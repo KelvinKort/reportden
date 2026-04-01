@@ -1,8 +1,15 @@
-const state = { rows: [], filtered: [] };
+const state = {
+  payments: [],
+  deals: [],
+  plans: [],
+  managers: [],
+  rows: []
+};
 
-const periodSelect = document.getElementById('periodSelect');
+const baseUrlInput = document.getElementById('baseUrlInput');
+const dateFromInput = document.getElementById('dateFrom');
+const dateToInput = document.getElementById('dateTo');
 const managerSelect = document.getElementById('managerSelect');
-const dataUrlInput = document.getElementById('dataUrlInput');
 const loadBtn = document.getElementById('loadBtn');
 const kpiGrid = document.getElementById('kpiGrid');
 const managerTableBody = document.querySelector('#managerTable tbody');
@@ -13,95 +20,31 @@ const reportDateLabel = document.getElementById('reportDateLabel');
 const fmtMoney = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Number(n || 0));
 const fmtPct = (n) => `${(Number(n || 0) * 100).toFixed(2)}%`;
 
-function normalizeRow(row) {
-  return {
-    manager_name: row.manager_name || '',
-    period_type: String(row.period_type || '').toLowerCase(),
-    period_label: row.period_label || '',
-    plan_amount: Number(row.plan_amount || 0),
-    fact_payments: Number(row.fact_payments || 0),
-    plan_percent: Number(row.plan_percent || 0),
-    new_deals_count: Number(row.new_deals_count || 0),
-    new_deals_amount: Number(row.new_deals_amount || 0),
-    active_deals_count: Number(row.active_deals_count || 0),
-    active_pipeline_amount: Number(row.active_pipeline_amount || 0),
-    won_count: Number(row.won_count || 0),
-    won_amount: Number(row.won_amount || 0),
-    lost_count: Number(row.lost_count || 0),
-    lost_amount: Number(row.lost_amount || 0),
-  };
+async function fetchDataset(baseUrl, dataset) {
+  const url = `${baseUrl}${baseUrl.includes('?') ? '&' : '?'}dataset=${dataset}`;
+  const response = await fetch(url, { method: 'GET', redirect: 'follow' });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`HTTP ${response.status} for ${dataset}`);
+  const parsed = JSON.parse(text.trim());
+  if (!Array.isArray(parsed)) throw new Error(`Dataset ${dataset} is not array`);
+  return parsed;
 }
 
-async function loadData() {
-  const url = dataUrlInput.value.trim();
-  if (!url) {
-    diagnostics.innerHTML = '<p>Укажи URL опубликованного CSV или JSON.</p>';
-    return;
-  }
-
-  diagnostics.innerHTML = '<p>Загружаю данные...</p>';
-
-  try {
-    const response = await fetch(url, { method: 'GET', redirect: 'follow' });
-    const text = await response.text();
-    const trimmed = text.trim();
-
-    if (!response.ok) {
-      diagnostics.innerHTML = `<p>Ошибка загрузки: HTTP ${response.status}</p>`;
-      return;
-    }
-
-    let rows;
-
-    if (trimmed.startsWith('[') || trimmed.startsWith('{') || url.toLowerCase().includes('json') || url.includes('/exec')) {
-      const parsed = JSON.parse(trimmed);
-      rows = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.rows) ? parsed.rows : []);
-    } else {
-      rows = parseCsv(text);
-    }
-
-    if (!Array.isArray(rows)) {
-      diagnostics.innerHTML = '<p>Источник вернул данные не в виде массива.</p>';
-      return;
-    }
-
-    state.rows = rows.map(normalizeRow);
-    populateManagerFilter();
-    render();
-  } catch (err) {
-    diagnostics.innerHTML = `<p>Ошибка парсинга/загрузки: ${escapeHtml(err.message || String(err))}</p>`;
-  }
+function parseRuDate(value) {
+  if (!value) return null;
+  if (value instanceof Date && !isNaN(value)) return value;
+  const s = String(value).trim();
+  const m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
 }
 
-function parseCsv(text) {
-  const lines = text.trim().split(/\r?\n/).filter(Boolean);
-  if (!lines.length) return [];
-  const headers = splitCsvLine(lines[0]);
-  return lines.slice(1).map(line => {
-    const values = splitCsvLine(line);
-    const obj = {};
-    headers.forEach((h, i) => obj[h] = values[i] || '');
-    return obj;
-  });
-}
-
-function splitCsvLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      inQuotes = !inQuotes;
-    } else if (ch === ',' && !inQuotes) {
-      result.push(current.replace(/^"|"$/g, ''));
-      current = '';
-    } else {
-      current += ch;
-    }
-  }
-  result.push(current.replace(/^"|"$/g, ''));
-  return result;
+function ymd(date) {
+  const y = date.getFullYear();
+  const m = ('0' + (date.getMonth() + 1)).slice(-2);
+  const d = ('0' + date.getDate()).slice(-2);
+  return `${y}-${m}-${d}`;
 }
 
 function populateManagerFilter() {
@@ -115,92 +58,131 @@ function populateManagerFilter() {
   });
 }
 
-function render() {
-  const period = periodSelect.value;
-  const manager = managerSelect.value;
+function aggregateForRange() {
+  const from = parseRuDate(dateFromInput.value);
+  const to = parseRuDate(dateToInput.value);
+  const selectedManager = managerSelect.value;
 
-  state.filtered = state.rows.filter(r => r.period_type === period && (manager === 'all' || r.manager_name === manager));
+  const managerMap = {};
+  const ensure = (name) => {
+    const key = name || 'Без менеджера';
+    if (!managerMap[key]) {
+      managerMap[key] = {
+        manager_name: key,
+        fact_payments: 0,
+        new_deals_count: 0,
+        new_deals_amount: 0,
+        active_pipeline_amount: 0,
+        won_amount: 0,
+        lost_amount: 0,
+        active_deals_count: 0,
+        won_count: 0,
+        lost_count: 0,
+      };
+    }
+    return managerMap[key];
+  };
+
+  state.payments.forEach(row => {
+    const dt = parseRuDate(row.payment_date);
+    if (!dt || (from && dt < from) || (to && dt > to)) return;
+    const manager = ensure(row.manager_name);
+    manager.fact_payments += Number(row.payment_amount || 0);
+  });
+
+  state.deals.forEach(row => {
+    const dt = parseRuDate(row.date_create);
+    if (!dt || (from && dt < from) || (to && dt > to)) return;
+    const manager = ensure(row.manager_name);
+    const amount = Number(row.amount || 0);
+    const isWon = String(row.is_won || '') === 'Да';
+    const isLost = String(row.is_lost || '') === 'Да';
+
+    manager.new_deals_count += 1;
+    manager.new_deals_amount += amount;
+    if (!isWon && !isLost) {
+      manager.active_deals_count += 1;
+      manager.active_pipeline_amount += amount;
+    }
+    if (isWon) {
+      manager.won_count += 1;
+      manager.won_amount += amount;
+    }
+    if (isLost) {
+      manager.lost_count += 1;
+      manager.lost_amount += amount;
+    }
+  });
+
+  state.rows = Object.values(managerMap).filter(r => selectedManager === 'all' || r.manager_name === selectedManager);
+}
+
+function render() {
+  aggregateForRange();
+  populateManagerFilter();
   renderKpis();
   renderTable();
   renderSummary();
   renderDiagnostics();
-
-  const labels = [...new Set(state.filtered.map(r => r.period_label).filter(Boolean))];
-  reportDateLabel.textContent = 'Период метки: ' + (labels[0] || '—');
+  reportDateLabel.textContent = `Диапазон: ${dateFromInput.value || '—'} → ${dateToInput.value || '—'}`;
 }
 
 function renderKpis() {
-  const totals = aggregate(state.filtered);
+  const totals = state.rows.reduce((acc, r) => {
+    acc.fact_payments += r.fact_payments;
+    acc.new_deals_count += r.new_deals_count;
+    acc.new_deals_amount += r.new_deals_amount;
+    acc.active_pipeline_amount += r.active_pipeline_amount;
+    acc.won_amount += r.won_amount;
+    acc.lost_amount += r.lost_amount;
+    return acc;
+  }, { fact_payments: 0, new_deals_count: 0, new_deals_amount: 0, active_pipeline_amount: 0, won_amount: 0, lost_amount: 0 });
+
   const items = [
     ['Факт оплат', fmtMoney(totals.fact_payments)],
-    ['План', fmtMoney(totals.plan_amount)],
-    ['% выполнения', fmtPct(totals.plan_amount ? totals.fact_payments / totals.plan_amount : 0)],
     ['Новые сделки', fmtMoney(totals.new_deals_count)],
     ['Сумма новых сделок', fmtMoney(totals.new_deals_amount)],
     ['Активная воронка', fmtMoney(totals.active_pipeline_amount)],
     ['Выиграно', fmtMoney(totals.won_amount)],
     ['Проиграно', fmtMoney(totals.lost_amount)],
   ];
+
   kpiGrid.innerHTML = items.map(([label, value]) => `
-    <div class="kpi">
-      <div class="kpi-label">${label}</div>
-      <div class="kpi-value">${value}</div>
-    </div>
+    <div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div></div>
   `).join('');
 }
 
 function renderTable() {
-  const rows = [...state.filtered].sort((a, b) => b.fact_payments - a.fact_payments);
+  const rows = [...state.rows].sort((a, b) => b.fact_payments - a.fact_payments);
   managerTableBody.innerHTML = rows.map(r => `
     <tr>
       <td>${escapeHtml(r.manager_name)}</td>
       <td>${fmtMoney(r.fact_payments)}</td>
-      <td>${fmtMoney(r.plan_amount)}</td>
-      <td>${fmtPct(r.plan_amount ? r.fact_payments / r.plan_amount : 0)}</td>
       <td>${fmtMoney(r.new_deals_count)}</td>
       <td>${fmtMoney(r.new_deals_amount)}</td>
       <td>${fmtMoney(r.active_pipeline_amount)}</td>
       <td>${fmtMoney(r.won_amount)}</td>
+      <td>${fmtMoney(r.lost_amount)}</td>
     </tr>
   `).join('');
 }
 
 function renderSummary() {
-  const totals = aggregate(state.filtered);
+  const totalManagers = state.rows.length;
   summaryPanel.innerHTML = [
-    ['Менеджеров в выборке', state.filtered.length],
-    ['Активных сделок', totals.active_deals_count],
-    ['Выигранных сделок', totals.won_count],
-    ['Проигранных сделок', totals.lost_count],
-    ['План-факт статус', (totals.plan_amount && totals.fact_payments / totals.plan_amount >= 1) ? '<span class="badge-good">План выполнен</span>' : '<span class="badge-warn">Ниже плана</span>']
+    ['Менеджеров в выборке', totalManagers],
+    ['Оплат загружено', state.payments.length],
+    ['Сделок загружено', state.deals.length],
+    ['План', 'Для произвольного периода пока не рассчитывается']
   ].map(([k, v]) => `<div class="summary-item"><span>${k}</span><span>${v}</span></div>`).join('');
 }
 
 function renderDiagnostics() {
-  const withoutManager = state.rows.filter(r => !r.manager_name || r.manager_name === 'Без менеджера').length;
   diagnostics.innerHTML = `
-    <p>Всего строк в источнике: <b>${state.rows.length}</b></p>
-    <p>Строк в текущем фильтре: <b>${state.filtered.length}</b></p>
-    <p>Строк без менеджера: <b>${withoutManager}</b></p>
+    <p>Строк fact_payments: <b>${state.payments.length}</b></p>
+    <p>Строк fact_deals: <b>${state.deals.length}</b></p>
+    <p>Менеджеров в диапазоне: <b>${state.rows.length}</b></p>
   `;
-}
-
-function aggregate(rows) {
-  return rows.reduce((acc, r) => {
-    Object.keys(acc).forEach(k => acc[k] += Number(r[k] || 0));
-    return acc;
-  }, {
-    plan_amount: 0,
-    fact_payments: 0,
-    new_deals_count: 0,
-    new_deals_amount: 0,
-    active_deals_count: 0,
-    active_pipeline_amount: 0,
-    won_count: 0,
-    won_amount: 0,
-    lost_count: 0,
-    lost_amount: 0,
-  });
 }
 
 function escapeHtml(str) {
@@ -212,6 +194,42 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-periodSelect.addEventListener('change', render);
+async function loadAll() {
+  const baseUrl = baseUrlInput.value.trim();
+  if (!baseUrl) {
+    diagnostics.innerHTML = '<p>Укажи Apps Script endpoint.</p>';
+    return;
+  }
+
+  diagnostics.innerHTML = '<p>Загружаю datasets...</p>';
+
+  try {
+    const [payments, deals, plans] = await Promise.all([
+      fetchDataset(baseUrl, 'fact_payments'),
+      fetchDataset(baseUrl, 'fact_deals'),
+      fetchDataset(baseUrl, 'plan_money').catch(() => [])
+    ]);
+
+    state.payments = payments;
+    state.deals = deals;
+    state.plans = plans;
+
+    const paymentDates = payments.map(r => parseRuDate(r.payment_date)).filter(Boolean);
+    const dealDates = deals.map(r => parseRuDate(r.date_create)).filter(Boolean);
+    const allDates = [...paymentDates, ...dealDates].sort((a, b) => a - b);
+
+    if (allDates.length) {
+      if (!dateFromInput.value) dateFromInput.value = ymd(allDates[0]);
+      if (!dateToInput.value) dateToInput.value = ymd(allDates[allDates.length - 1]);
+    }
+
+    render();
+  } catch (err) {
+    diagnostics.innerHTML = `<p>Ошибка загрузки datasets: ${escapeHtml(err.message || String(err))}</p>`;
+  }
+}
+
+loadBtn.addEventListener('click', loadAll);
 managerSelect.addEventListener('change', render);
-loadBtn.addEventListener('click', loadData);
+dateFromInput.addEventListener('change', render);
+dateToInput.addEventListener('change', render);
