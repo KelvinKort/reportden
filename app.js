@@ -2,7 +2,6 @@ const state = {
   payments: [],
   deals: [],
   plans: [],
-  managers: [],
   rows: [],
   debug: {}
 };
@@ -21,6 +20,7 @@ const diagnostics = document.getElementById('diagnostics');
 const reportDateLabel = document.getElementById('reportDateLabel');
 
 const fmtMoney = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Number(n || 0));
+const fmtPct = (n) => `${(Number(n || 0) * 100).toFixed(2)}%`;
 
 function parseLooseDate(value) {
   if (!value) return null;
@@ -53,6 +53,19 @@ async function fetchDataset(baseUrl, dataset) {
   return parsed;
 }
 
+function overlapDays(startA, endA, startB, endB) {
+  const start = new Date(Math.max(startA.getTime(), startB.getTime()));
+  const end = new Date(Math.min(endA.getTime(), endB.getTime()));
+  if (end < start) return 0;
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.floor((end - start) / msPerDay) + 1;
+}
+
+function daysInRange(start, end) {
+  const msPerDay = 24 * 60 * 60 * 1000;
+  return Math.floor((end - start) / msPerDay) + 1;
+}
+
 function populateManagerFilter() {
   const selected = managerSelect.value || 'all';
   const managers = [...new Set(state.rows.map(r => r.manager_name).filter(Boolean))].sort();
@@ -78,6 +91,8 @@ function aggregateForRange() {
       managerMap[key] = {
         manager_name: key,
         fact_payments: 0,
+        range_plan_amount: 0,
+        plan_percent: 0,
         new_deals_count: 0,
         new_deals_amount: 0,
         active_pipeline_amount: 0,
@@ -93,6 +108,7 @@ function aggregateForRange() {
 
   let validPaymentDates = 0;
   let validDealDates = 0;
+  let validPlanRows = 0;
 
   state.payments.forEach(row => {
     const dt = parseLooseDate(row.payment_date);
@@ -129,8 +145,36 @@ function aggregateForRange() {
     }
   });
 
+  if (from && to) {
+    state.plans.forEach(row => {
+      if (String(row.period_type || '').toLowerCase() !== 'month') return;
+
+      const planStart = parseLooseDate(row.period_start);
+      const planEnd = parseLooseDate(row.period_end);
+      const managerName = row.manager_name || row.manager_name_unified || '';
+      const planAmount = Number(row.plan_amount || 0);
+
+      if (!planStart || !planEnd || !planAmount || !managerName) return;
+      validPlanRows++;
+
+      const overlap = overlapDays(from, to, planStart, planEnd);
+      if (overlap <= 0) return;
+
+      const totalDays = daysInRange(planStart, planEnd);
+      const partialPlan = planAmount * (overlap / totalDays);
+
+      const manager = ensure(managerName);
+      manager.range_plan_amount += partialPlan;
+    });
+  }
+
+  Object.values(managerMap).forEach(m => {
+    m.plan_percent = m.range_plan_amount > 0 ? m.fact_payments / m.range_plan_amount : 0;
+  });
+
   state.debug.validPaymentDates = validPaymentDates;
   state.debug.validDealDates = validDealDates;
+  state.debug.validPlanRows = validPlanRows;
   state.rows = Object.values(managerMap).filter(r => selectedManager === 'all' || r.manager_name === selectedManager);
 }
 
@@ -147,16 +191,19 @@ function render() {
 function renderKpis() {
   const totals = state.rows.reduce((acc, r) => {
     acc.fact_payments += r.fact_payments;
+    acc.range_plan_amount += r.range_plan_amount;
     acc.new_deals_count += r.new_deals_count;
     acc.new_deals_amount += r.new_deals_amount;
     acc.active_pipeline_amount += r.active_pipeline_amount;
     acc.won_amount += r.won_amount;
     acc.lost_amount += r.lost_amount;
     return acc;
-  }, { fact_payments: 0, new_deals_count: 0, new_deals_amount: 0, active_pipeline_amount: 0, won_amount: 0, lost_amount: 0 });
+  }, { fact_payments: 0, range_plan_amount: 0, new_deals_count: 0, new_deals_amount: 0, active_pipeline_amount: 0, won_amount: 0, lost_amount: 0 });
 
   const items = [
     ['Факт оплат', fmtMoney(totals.fact_payments)],
+    ['План периода', fmtMoney(totals.range_plan_amount)],
+    ['% выполнения', fmtPct(totals.range_plan_amount ? totals.fact_payments / totals.range_plan_amount : 0)],
     ['Новые сделки', fmtMoney(totals.new_deals_count)],
     ['Сумма новых сделок', fmtMoney(totals.new_deals_amount)],
     ['Активная воронка', fmtMoney(totals.active_pipeline_amount)],
@@ -175,6 +222,8 @@ function renderTable() {
     <tr>
       <td>${escapeHtml(r.manager_name)}</td>
       <td>${fmtMoney(r.fact_payments)}</td>
+      <td>${fmtMoney(r.range_plan_amount)}</td>
+      <td>${fmtPct(r.plan_percent)}</td>
       <td>${fmtMoney(r.new_deals_count)}</td>
       <td>${fmtMoney(r.new_deals_amount)}</td>
       <td>${fmtMoney(r.active_pipeline_amount)}</td>
@@ -189,22 +238,26 @@ function renderSummary() {
     ['Менеджеров в выборке', state.rows.length],
     ['Оплат загружено', state.payments.length],
     ['Сделок загружено', state.deals.length],
-    ['План', 'Для произвольного периода пока не рассчитывается']
+    ['Плановых строк загружено', state.plans.length]
   ].map(([k, v]) => `<div class="summary-item"><span>${k}</span><span>${v}</span></div>`).join('');
 }
 
 function renderDiagnostics() {
   const samplePayment = state.payments[0] ? JSON.stringify(state.payments[0]).slice(0, 220) : '—';
   const sampleDeal = state.deals[0] ? JSON.stringify(state.deals[0]).slice(0, 220) : '—';
+  const samplePlan = state.plans[0] ? JSON.stringify(state.plans[0]).slice(0, 220) : '—';
   diagnostics.innerHTML = `
     <p>Endpoint: <b>${escapeHtml(baseUrlInput.value || '')}</b></p>
     <p>Строк fact_payments: <b>${state.payments.length}</b></p>
     <p>Строк fact_deals: <b>${state.deals.length}</b></p>
+    <p>Строк plan_money: <b>${state.plans.length}</b></p>
     <p>Валидных дат оплат: <b>${state.debug.validPaymentDates || 0}</b></p>
     <p>Валидных дат сделок: <b>${state.debug.validDealDates || 0}</b></p>
+    <p>Валидных плановых строк month: <b>${state.debug.validPlanRows || 0}</b></p>
     <p>Менеджеров в диапазоне: <b>${state.rows.length}</b></p>
     <p>Sample payment: <code>${escapeHtml(samplePayment)}</code></p>
     <p>Sample deal: <code>${escapeHtml(sampleDeal)}</code></p>
+    <p>Sample plan: <code>${escapeHtml(samplePlan)}</code></p>
   `;
 }
 
