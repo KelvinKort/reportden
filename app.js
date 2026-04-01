@@ -8,7 +8,6 @@ const state = {
 
 const DEFAULT_ENDPOINT = 'https://script.google.com/macros/s/AKfycbx7BOwirzdq0Eq839ywIvmxWVkH_1lVTvuKL7JPjfqtRZFWgPUcc33TfmtVH02WruI/exec';
 
-const baseUrlInput = document.getElementById('baseUrlInput');
 const dateFromInput = document.getElementById('dateFrom');
 const dateToInput = document.getElementById('dateTo');
 const managerSelect = document.getElementById('managerSelect');
@@ -253,7 +252,7 @@ function escapeHtml(str) {
 }
 
 async function loadAll() {
-  const baseUrl = baseUrlInput.value.trim();
+  const baseUrl = DEFAULT_ENDPOINT;
   if (!baseUrl) {
     diagnostics.innerHTML = '<p>Укажи Apps Script endpoint.</p>';
     return;
@@ -287,7 +286,6 @@ async function loadAll() {
   }
 }
 
-baseUrlInput.value = DEFAULT_ENDPOINT;
 loadBtn.addEventListener('click', loadAll);
 managerSelect.addEventListener('change', render);
 dateFromInput.addEventListener('change', render);

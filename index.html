@@ -3,41 +3,43 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sales Dashboard</title>
+  <title>Управленческий отчет</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
   <div class="app">
-    <header class="topbar">
-      <div>
-        <h1>Управленческий dashboard</h1>
-        <p class="subtitle">План, факт и воронка по менеджерам</p>
-      </div>
-      <div class="report-meta">
-        <span id="reportDateLabel">Диапазон: —</span>
-      </div>
+    <header class="topbar-banner">
+      <h1>УПРАВЛЕНЧЕСКИЙ ОТЧЕТ</h1>
     </header>
 
     <section class="filters card">
-      <div class="filter-group wide">
-        <label for="baseUrlInput">Apps Script endpoint</label>
-        <input id="baseUrlInput" type="text" placeholder="Вставь URL /exec Apps Script endpoint" />
-      </div>
-      <div class="filter-group">
+      <div class="filter-group compact">
         <label for="dateFrom">Дата с</label>
         <input id="dateFrom" type="date" />
       </div>
-      <div class="filter-group">
+      <div class="filter-group compact">
         <label for="dateTo">Дата по</label>
         <input id="dateTo" type="date" />
       </div>
-      <div class="filter-group">
+      <div class="filter-group compact manager-filter">
         <label for="managerSelect">Менеджер</label>
         <select id="managerSelect">
           <option value="all">Все менеджеры</option>
         </select>
       </div>
-      <button id="loadBtn">Загрузить</button>
+      <div class="filter-actions">
+        <button id="loadBtn">Загрузить</button>
+      </div>
+    </section>
+
+    <section class="card help-card">
+      <div class="help-text">
+        <strong>Как обновить данные:</strong>
+        1) обнови Google Sheets через <code>refreshAllReports()</code>, 2) вернись сюда и нажми <b>Загрузить</b>.
+      </div>
+      <div class="report-meta">
+        <span id="reportDateLabel">Диапазон: —</span>
+      </div>
     </section>
 
     <section class="kpis" id="kpiGrid"></section>
@@ -71,7 +73,6 @@
     </section>
 
     <section class="card diagnostics">
-      <div class="card-header"><h2>Диагностика</h2></div>
       <div id="diagnostics"></div>
     </section>
   </div>
