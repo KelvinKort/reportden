@@ -16,7 +16,7 @@ const fmtPct = (n) => `${(Number(n || 0) * 100).toFixed(2)}%`;
 function normalizeRow(row) {
   return {
     manager_name: row.manager_name || '',
-    period_type: (row.period_type || '').toLowerCase(),
+    period_type: String(row.period_type || '').toLowerCase(),
     period_label: row.period_label || '',
     plan_amount: Number(row.plan_amount || 0),
     fact_payments: Number(row.fact_payments || 0),
@@ -39,24 +39,43 @@ async function loadData() {
     return;
   }
 
-  const text = await fetch(url).then(r => r.text());
-  let rows = [];
-  const trimmed = text.trim();
+  diagnostics.innerHTML = '<p>Загружаю данные...</p>';
 
-  if (trimmed.startsWith('[') || trimmed.startsWith('{') || url.toLowerCase().includes('json') || url.includes('/exec')) {
-    rows = JSON.parse(trimmed);
-    if (!Array.isArray(rows) && rows.rows) rows = rows.rows;
-  } else {
-    rows = parseCsv(text);
+  try {
+    const response = await fetch(url, { method: 'GET', redirect: 'follow' });
+    const text = await response.text();
+    const trimmed = text.trim();
+
+    if (!response.ok) {
+      diagnostics.innerHTML = `<p>Ошибка загрузки: HTTP ${response.status}</p>`;
+      return;
+    }
+
+    let rows;
+
+    if (trimmed.startsWith('[') || trimmed.startsWith('{') || url.toLowerCase().includes('json') || url.includes('/exec')) {
+      const parsed = JSON.parse(trimmed);
+      rows = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.rows) ? parsed.rows : []);
+    } else {
+      rows = parseCsv(text);
+    }
+
+    if (!Array.isArray(rows)) {
+      diagnostics.innerHTML = '<p>Источник вернул данные не в виде массива.</p>';
+      return;
+    }
+
+    state.rows = rows.map(normalizeRow);
+    populateManagerFilter();
+    render();
+  } catch (err) {
+    diagnostics.innerHTML = `<p>Ошибка парсинга/загрузки: ${escapeHtml(err.message || String(err))}</p>`;
   }
-
-  state.rows = rows.map(normalizeRow);
-  populateManagerFilter();
-  render();
 }
 
 function parseCsv(text) {
-  const lines = text.trim().split(/\r?\n/);
+  const lines = text.trim().split(/\r?\n/).filter(Boolean);
+  if (!lines.length) return [];
   const headers = splitCsvLine(lines[0]);
   return lines.slice(1).map(line => {
     const values = splitCsvLine(line);
@@ -72,9 +91,14 @@ function splitCsvLine(line) {
   let inQuotes = false;
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
-    if (ch === '"') inQuotes = !inQuotes;
-    else if (ch === ',' && !inQuotes) { result.push(current.replace(/^"|"$/g, '')); current = ''; }
-    else current += ch;
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === ',' && !inQuotes) {
+      result.push(current.replace(/^"|"$/g, ''));
+      current = '';
+    } else {
+      current += ch;
+    }
   }
   result.push(current.replace(/^"|"$/g, ''));
   return result;
@@ -126,10 +150,10 @@ function renderKpis() {
 }
 
 function renderTable() {
-  const rows = [...state.filtered].sort((a,b) => b.fact_payments - a.fact_payments);
+  const rows = [...state.filtered].sort((a, b) => b.fact_payments - a.fact_payments);
   managerTableBody.innerHTML = rows.map(r => `
     <tr>
-      <td>${r.manager_name}</td>
+      <td>${escapeHtml(r.manager_name)}</td>
       <td>${fmtMoney(r.fact_payments)}</td>
       <td>${fmtMoney(r.plan_amount)}</td>
       <td>${fmtPct(r.plan_amount ? r.fact_payments / r.plan_amount : 0)}</td>
@@ -149,7 +173,7 @@ function renderSummary() {
     ['Выигранных сделок', totals.won_count],
     ['Проигранных сделок', totals.lost_count],
     ['План-факт статус', (totals.plan_amount && totals.fact_payments / totals.plan_amount >= 1) ? '<span class="badge-good">План выполнен</span>' : '<span class="badge-warn">Ниже плана</span>']
-  ].map(([k,v]) => `<div class="summary-item"><span>${k}</span><span>${v}</span></div>`).join('');
+  ].map(([k, v]) => `<div class="summary-item"><span>${k}</span><span>${v}</span></div>`).join('');
 }
 
 function renderDiagnostics() {
@@ -177,6 +201,15 @@ function aggregate(rows) {
     lost_count: 0,
     lost_amount: 0,
   });
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 }
 
 periodSelect.addEventListener('change', render);
