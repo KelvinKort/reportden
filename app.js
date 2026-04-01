@@ -1,13 +1,20 @@
+const DASH_PASSWORD = 'kraski39';
+const SESSION_KEY = 'kraski39_dashboard_auth';
+const DEFAULT_ENDPOINT = 'https://script.google.com/macros/s/AKfycbx7BOwirzdq0Eq839ywIvmxWVkH_1lVTvuKL7JPjfqtRZFWgPUcc33TfmtVH02WruI/exec';
+
 const state = {
   payments: [],
   deals: [],
   plans: [],
-  rows: [],
-  debug: {}
+  rows: []
 };
 
-const DEFAULT_ENDPOINT = 'https://script.google.com/macros/s/AKfycbx7BOwirzdq0Eq839ywIvmxWVkH_1lVTvuKL7JPjfqtRZFWgPUcc33TfmtVH02WruI/exec';
-
+const loginScreen = document.getElementById('loginScreen');
+const appRoot = document.getElementById('appRoot');
+const passwordInput = document.getElementById('passwordInput');
+const loginBtn = document.getElementById('loginBtn');
+const loginError = document.getElementById('loginError');
+const logoutBtn = document.getElementById('logoutBtn');
 const dateFromInput = document.getElementById('dateFrom');
 const dateToInput = document.getElementById('dateTo');
 const managerSelect = document.getElementById('managerSelect');
@@ -21,17 +28,48 @@ const reportDateLabel = document.getElementById('reportDateLabel');
 const fmtMoney = (n) => new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Number(n || 0));
 const fmtPct = (n) => `${(Number(n || 0) * 100).toFixed(2)}%`;
 
+function showApp() {
+  loginScreen.classList.add('hidden');
+  appRoot.classList.remove('hidden');
+}
+
+function showLogin() {
+  appRoot.classList.add('hidden');
+  loginScreen.classList.remove('hidden');
+}
+
+function checkSession() {
+  if (sessionStorage.getItem(SESSION_KEY) === 'ok') {
+    showApp();
+  } else {
+    showLogin();
+  }
+}
+
+function handleLogin() {
+  if (passwordInput.value === DASH_PASSWORD) {
+    sessionStorage.setItem(SESSION_KEY, 'ok');
+    loginError.textContent = '';
+    showApp();
+  } else {
+    loginError.textContent = 'Неверный пароль';
+  }
+}
+
+function handleLogout() {
+  sessionStorage.removeItem(SESSION_KEY);
+  passwordInput.value = '';
+  showLogin();
+}
+
 function parseLooseDate(value) {
   if (!value) return null;
   if (value instanceof Date && !isNaN(value)) return value;
   const s = String(value).trim();
-
   let m = s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);
   if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
-
   m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
-
   const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }
@@ -176,7 +214,6 @@ function render() {
   renderKpis();
   renderTable();
   renderSummary();
-  renderDiagnostics();
   reportDateLabel.textContent = `Диапазон: ${dateFromInput.value || '—'} → ${dateToInput.value || '—'}`;
 }
 
@@ -238,10 +275,6 @@ function renderSummary() {
   ].map(([k, v]) => `<div class="summary-item"><span>${k}</span><span>${v}</span></div>`).join('');
 }
 
-function renderDiagnostics() {
-  diagnostics.innerHTML = '';
-}
-
 function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -253,11 +286,6 @@ function escapeHtml(str) {
 
 async function loadAll() {
   const baseUrl = DEFAULT_ENDPOINT;
-  if (!baseUrl) {
-    diagnostics.innerHTML = '<p>Укажи Apps Script endpoint.</p>';
-    return;
-  }
-
   diagnostics.innerHTML = '<p>Загружаю datasets...</p>';
 
   try {
@@ -286,7 +314,14 @@ async function loadAll() {
   }
 }
 
+loginBtn.addEventListener('click', handleLogin);
+passwordInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') handleLogin();
+});
+logoutBtn.addEventListener('click', handleLogout);
 loadBtn.addEventListener('click', loadAll);
 managerSelect.addEventListener('change', render);
 dateFromInput.addEventListener('change', render);
 dateToInput.addEventListener('change', render);
+
+checkSession();

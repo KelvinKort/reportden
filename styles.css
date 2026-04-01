@@ -17,6 +17,42 @@ body {
   background: var(--bg);
   color: var(--text);
 }
+.hidden { display: none; }
+.login-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  background: #fff;
+  border-radius: 18px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(15,23,42,0.12);
+  border: 1px solid #e5e7eb;
+}
+.login-banner {
+  background: var(--brand);
+  color: #fff;
+  padding: 18px 20px;
+  font-size: 22px;
+  font-weight: 800;
+  text-align: center;
+}
+.login-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.login-error {
+  color: var(--danger);
+  font-size: 14px;
+  min-height: 20px;
+}
 .app {
   max-width: 1440px;
   margin: 0 auto;
@@ -30,11 +66,22 @@ body {
   margin-bottom: 18px;
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
+.topbar-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
 .topbar-banner h1 {
   margin: 0;
   font-size: 28px;
   font-weight: 800;
   letter-spacing: 0.03em;
+}
+.logout-btn {
+  background: rgba(255,255,255,0.15);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,0.35);
 }
 .card {
   background: var(--card);
@@ -128,4 +175,5 @@ th { color: var(--muted); font-weight: 600; }
 @media (max-width: 1100px) {
   .filters, .layout-grid, .kpis { grid-template-columns: 1fr; }
   .help-card { flex-direction: column; align-items: flex-start; }
+  .topbar-row { flex-direction: column; align-items: flex-start; }
 }
