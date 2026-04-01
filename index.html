@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sales Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div>
+        <h1>Управленческий dashboard</h1>
+        <p class="subtitle">План, факт и воронка по менеджерам</p>
+      </div>
+      <div class="report-meta">
+        <span id="reportDateLabel">Дата отчёта: —</span>
+      </div>
+    </header>
+
+    <section class="filters card">
+      <div class="filter-group">
+        <label for="periodSelect">Период</label>
+        <select id="periodSelect">
+          <option value="week">Неделя</option>
+          <option value="mtd">С начала месяца</option>
+          <option value="month" selected>Месяц</option>
+          <option value="ytd">С начала года</option>
+          <option value="year">Год</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label for="managerSelect">Менеджер</label>
+        <select id="managerSelect">
+          <option value="all">Все менеджеры</option>
+        </select>
+      </div>
+      <div class="filter-group wide">
+        <label for="dataUrlInput">Источник данных (CSV/JSON URL)</label>
+        <input id="dataUrlInput" type="text" placeholder="Вставь URL опубликованного CSV/JSON из Google Sheets" />
+      </div>
+      <button id="loadBtn">Загрузить</button>
+    </section>
+
+    <section class="kpis" id="kpiGrid"></section>
+
+    <section class="layout-grid">
+      <div class="card">
+        <div class="card-header">
+          <h2>Менеджеры</h2>
+        </div>
+        <div class="table-wrap">
+          <table id="managerTable">
+            <thead>
+              <tr>
+                <th>Менеджер</th>
+                <th>Факт</th>
+                <th>План</th>
+                <th>% плана</th>
+                <th>Новые сделки</th>
+                <th>Сумма новых</th>
+                <th>Активная воронка</th>
+                <th>Выиграно</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card side-panel">
+        <div class="card-header">
+          <h2>Сводка</h2>
+        </div>
+        <div id="summaryPanel" class="summary-panel"></div>
+      </div>
+    </section>
+
+    <section class="card diagnostics">
+      <div class="card-header">
+        <h2>Диагностика</h2>
+      </div>
+      <div id="diagnostics"></div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
