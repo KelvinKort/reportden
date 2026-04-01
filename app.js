@@ -106,14 +106,9 @@ function aggregateForRange() {
     return managerMap[key];
   };
 
-  let validPaymentDates = 0;
-  let validDealDates = 0;
-  let validPlanRows = 0;
-
   state.payments.forEach(row => {
     const dt = parseLooseDate(row.payment_date);
     if (!dt) return;
-    validPaymentDates++;
     if ((from && dt < from) || (to && dt > to)) return;
     const manager = ensure(row.manager_name);
     manager.fact_payments += Number(row.payment_amount || 0);
@@ -122,7 +117,6 @@ function aggregateForRange() {
   state.deals.forEach(row => {
     const dt = parseLooseDate(row.date_create);
     if (!dt) return;
-    validDealDates++;
     if ((from && dt < from) || (to && dt > to)) return;
     const manager = ensure(row.manager_name);
     const amount = Number(row.amount || 0);
@@ -155,7 +149,6 @@ function aggregateForRange() {
       const planAmount = Number(row.plan_amount || 0);
 
       if (!planStart || !planEnd || !planAmount || !managerName) return;
-      validPlanRows++;
 
       const overlap = overlapDays(from, to, planStart, planEnd);
       if (overlap <= 0) return;
@@ -172,10 +165,10 @@ function aggregateForRange() {
     m.plan_percent = m.range_plan_amount > 0 ? m.fact_payments / m.range_plan_amount : 0;
   });
 
-  state.debug.validPaymentDates = validPaymentDates;
-  state.debug.validDealDates = validDealDates;
-  state.debug.validPlanRows = validPlanRows;
-  state.rows = Object.values(managerMap).filter(r => selectedManager === 'all' || r.manager_name === selectedManager);
+  state.rows = Object.values(managerMap)
+    .filter(r => selectedManager === 'all' || r.manager_name === selectedManager)
+    .filter(r => r.manager_name !== 'Без менеджера')
+    .filter(r => r.fact_payments > 0 || r.new_deals_count > 0 || r.active_pipeline_amount > 0 || r.won_amount > 0 || r.range_plan_amount > 0);
 }
 
 function render() {
@@ -200,10 +193,11 @@ function renderKpis() {
     return acc;
   }, { fact_payments: 0, range_plan_amount: 0, new_deals_count: 0, new_deals_amount: 0, active_pipeline_amount: 0, won_amount: 0, lost_amount: 0 });
 
+  const completion = totals.range_plan_amount ? totals.fact_payments / totals.range_plan_amount : 0;
   const items = [
     ['Факт оплат', fmtMoney(totals.fact_payments)],
     ['План периода', fmtMoney(totals.range_plan_amount)],
-    ['% выполнения', fmtPct(totals.range_plan_amount ? totals.fact_payments / totals.range_plan_amount : 0)],
+    ['% выполнения', fmtPct(completion)],
     ['Новые сделки', fmtMoney(totals.new_deals_count)],
     ['Сумма новых сделок', fmtMoney(totals.new_deals_amount)],
     ['Активная воронка', fmtMoney(totals.active_pipeline_amount)],
@@ -211,26 +205,29 @@ function renderKpis() {
     ['Проиграно', fmtMoney(totals.lost_amount)],
   ];
 
-  kpiGrid.innerHTML = items.map(([label, value]) => `
-    <div class="kpi"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div></div>
+  kpiGrid.innerHTML = items.map(([label, value], i) => `
+    <div class="kpi kpi-${i + 1}"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div></div>
   `).join('');
 }
 
 function renderTable() {
   const rows = [...state.rows].sort((a, b) => b.fact_payments - a.fact_payments);
-  managerTableBody.innerHTML = rows.map(r => `
-    <tr>
-      <td>${escapeHtml(r.manager_name)}</td>
-      <td>${fmtMoney(r.fact_payments)}</td>
-      <td>${fmtMoney(r.range_plan_amount)}</td>
-      <td>${fmtPct(r.plan_percent)}</td>
-      <td>${fmtMoney(r.new_deals_count)}</td>
-      <td>${fmtMoney(r.new_deals_amount)}</td>
-      <td>${fmtMoney(r.active_pipeline_amount)}</td>
-      <td>${fmtMoney(r.won_amount)}</td>
-      <td>${fmtMoney(r.lost_amount)}</td>
-    </tr>
-  `).join('');
+  managerTableBody.innerHTML = rows.map(r => {
+    const pctClass = r.plan_percent >= 1 ? 'badge-good' : (r.plan_percent >= 0.7 ? 'badge-warn' : '');
+    return `
+      <tr>
+        <td>${escapeHtml(r.manager_name)}</td>
+        <td>${fmtMoney(r.fact_payments)}</td>
+        <td>${fmtMoney(r.range_plan_amount)}</td>
+        <td class="${pctClass}">${fmtPct(r.plan_percent)}</td>
+        <td>${fmtMoney(r.new_deals_count)}</td>
+        <td>${fmtMoney(r.new_deals_amount)}</td>
+        <td>${fmtMoney(r.active_pipeline_amount)}</td>
+        <td>${fmtMoney(r.won_amount)}</td>
+        <td>${fmtMoney(r.lost_amount)}</td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function renderSummary() {
@@ -238,27 +235,12 @@ function renderSummary() {
     ['Менеджеров в выборке', state.rows.length],
     ['Оплат загружено', state.payments.length],
     ['Сделок загружено', state.deals.length],
-    ['Плановых строк загружено', state.plans.length]
+    ['Плановых строк', state.plans.length]
   ].map(([k, v]) => `<div class="summary-item"><span>${k}</span><span>${v}</span></div>`).join('');
 }
 
 function renderDiagnostics() {
-  const samplePayment = state.payments[0] ? JSON.stringify(state.payments[0]).slice(0, 220) : '—';
-  const sampleDeal = state.deals[0] ? JSON.stringify(state.deals[0]).slice(0, 220) : '—';
-  const samplePlan = state.plans[0] ? JSON.stringify(state.plans[0]).slice(0, 220) : '—';
-  diagnostics.innerHTML = `
-    <p>Endpoint: <b>${escapeHtml(baseUrlInput.value || '')}</b></p>
-    <p>Строк fact_payments: <b>${state.payments.length}</b></p>
-    <p>Строк fact_deals: <b>${state.deals.length}</b></p>
-    <p>Строк plan_money: <b>${state.plans.length}</b></p>
-    <p>Валидных дат оплат: <b>${state.debug.validPaymentDates || 0}</b></p>
-    <p>Валидных дат сделок: <b>${state.debug.validDealDates || 0}</b></p>
-    <p>Валидных плановых строк month: <b>${state.debug.validPlanRows || 0}</b></p>
-    <p>Менеджеров в диапазоне: <b>${state.rows.length}</b></p>
-    <p>Sample payment: <code>${escapeHtml(samplePayment)}</code></p>
-    <p>Sample deal: <code>${escapeHtml(sampleDeal)}</code></p>
-    <p>Sample plan: <code>${escapeHtml(samplePlan)}</code></p>
-  `;
+  diagnostics.innerHTML = '';
 }
 
 function escapeHtml(str) {
@@ -289,7 +271,6 @@ async function loadAll() {
     state.payments = payments;
     state.deals = deals;
     state.plans = plans;
-    state.debug = {};
 
     const paymentDates = payments.map(r => parseLooseDate(r.payment_date)).filter(Boolean);
     const dealDates = deals.map(r => parseLooseDate(r.date_create)).filter(Boolean);
