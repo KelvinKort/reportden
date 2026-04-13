@@ -245,16 +245,20 @@ function renderKpis() {
     acc.active_pipeline_amount += r.active_pipeline_amount;
     acc.won_amount += r.won_amount;
     acc.lost_amount += r.lost_amount;
+    acc.won_count += r.won_count || 0;
+    acc.lost_count += r.lost_count || 0;
+    acc.active_deals_count += r.active_deals_count || 0;
     return acc;
-  }, { fact_payments: 0, range_plan_amount: 0, new_deals_count: 0, new_deals_amount: 0, active_pipeline_amount: 0, won_amount: 0, lost_amount: 0 });
+  }, { fact_payments: 0, range_plan_amount: 0, new_deals_count: 0, new_deals_amount: 0, active_pipeline_amount: 0, won_amount: 0, lost_amount: 0, won_count: 0, lost_count: 0, active_deals_count: 0 });
 
   const completion = totals.range_plan_amount ? totals.fact_payments / totals.range_plan_amount : 0;
   const items = [
     ['Факт оплат', fmtMoney(totals.fact_payments)],
     ['План периода', fmtMoney(totals.range_plan_amount)],
     ['% выполнения', fmtPct(completion)],
-    ['Новые сделки', fmtMoney(totals.new_deals_count)],
+    ['Новые сделки', String(totals.new_deals_count)],
     ['Сумма новых сделок', fmtMoney(totals.new_deals_amount)],
+    ['Активные сделки', String(totals.active_deals_count)],
     ['Активная воронка', fmtMoney(totals.active_pipeline_amount)],
     ['Выиграно', fmtMoney(totals.won_amount)],
     ['Проиграно', fmtMoney(totals.lost_amount)],
@@ -275,7 +279,7 @@ function renderTable() {
         <td>${fmtMoney(r.fact_payments)}</td>
         <td>${fmtMoney(r.range_plan_amount)}</td>
         <td class="${pctClass}">${fmtPct(r.plan_percent)}</td>
-        <td>${fmtMoney(r.new_deals_count)}</td>
+        <td>${r.new_deals_count}</td>
         <td>${fmtMoney(r.new_deals_amount)}</td>
         <td>${fmtMoney(r.active_pipeline_amount)}</td>
         <td>${fmtMoney(r.won_amount)}</td>
