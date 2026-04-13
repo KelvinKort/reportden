@@ -6,7 +6,8 @@ const state = {
   payments: [],
   deals: [],
   plans: [],
-  rows: []
+  rows: [],
+  debug: null
 };
 
 const loginScreen = document.getElementById('loginScreen');
@@ -135,6 +136,15 @@ function aggregateForRange() {
   const from = parseLooseDate(dateFromInput.value);
   const to = parseLooseDate(dateToInput.value);
   const selectedManager = managerSelect.value;
++
++  state.debug = {
++    createCount: 0,
++    createSum: 0,
++    wonCount: 0,
++    wonSum: 0,
++    lostCount: 0,
++    lostSum: 0
++  };
 
   const managerMap = {};
   const ensure = (name) => {
@@ -182,6 +192,8 @@ function aggregateForRange() {
     if (dateCreate && (!from || dateCreate >= from) && (!to || dateCreate <= to)) {
       manager.new_deals_count += 1;
       manager.new_deals_amount += amount;
+      state.debug.createCount += 1;
+      state.debug.createSum += amount;
 
       if (!isWon && !isLost) {
         manager.active_deals_count += 1;
@@ -192,11 +204,15 @@ function aggregateForRange() {
     if (isWon && dateModify && (!from || dateModify >= from) && (!to || dateModify <= to)) {
       manager.won_count += 1;
       manager.won_amount += amount;
+      state.debug.wonCount += 1;
+      state.debug.wonSum += amount;
     }
 
     if (isLost && dateModify && (!from || dateModify >= from) && (!to || dateModify <= to)) {
       manager.lost_count += 1;
       manager.lost_amount += amount;
+      state.debug.lostCount += 1;
+      state.debug.lostSum += amount;
     }
   });
 
@@ -294,12 +310,25 @@ function renderTable() {
 }
 
 function renderSummary() {
-  summaryPanel.innerHTML = [
+  const baseItems = [
     ['Менеджеров в выборке', state.rows.length],
     ['Оплат загружено', state.payments.length],
     ['Сделок загружено', state.deals.length],
     ['Плановых строк', state.plans.length]
-  ].map(([k, v]) => `<div class="summary-item"><span>${k}</span><span>${v}</span></div>`).join('');
+  ];
+
+  const debugItems = state.debug ? [
+    ['DEBUG create_count', state.debug.createCount],
+    ['DEBUG create_sum', fmtMoney(state.debug.createSum)],
+    ['DEBUG won_count', state.debug.wonCount],
+    ['DEBUG won_sum', fmtMoney(state.debug.wonSum)],
+    ['DEBUG lost_count', state.debug.lostCount],
+    ['DEBUG lost_sum', fmtMoney(state.debug.lostSum)]
+  ] : [];
+
+  summaryPanel.innerHTML = [...baseItems, ...debugItems]
+    .map(([k, v]) => `<div class="summary-item"><span>${k}</span><span>${v}</span></div>`)
+    .join('');
 }
 
 function escapeHtml(str) {
