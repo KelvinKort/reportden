@@ -159,15 +159,20 @@ function aggregateForRange() {
   };
 
   state.payments.forEach(row => {
+    const rowManager = String(row.manager_name || '').trim() || 'Без менеджера';
+    if (selectedManager !== 'all' && rowManager !== selectedManager) return;
     const dt = parseLooseDate(row.payment_date);
     if (!dt) return;
     if ((from && dt < from) || (to && dt > to)) return;
-    const manager = ensure(row.manager_name);
+    const manager = ensure(rowManager);
     manager.fact_payments += Number(row.payment_amount || 0);
   });
 
   state.deals.forEach(row => {
-    const manager = ensure(row.manager_name);
+    const rowManager = String(row.manager_name || '').trim() || 'Без менеджера';
+    if (selectedManager !== 'all' && rowManager !== selectedManager) return;
+
+    const manager = ensure(rowManager);
     const amount = Number(row.amount || 0);
     const isWon = String(row.is_won || '') === 'Да';
     const isLost = String(row.is_lost || '') === 'Да';
@@ -222,7 +227,6 @@ function aggregateForRange() {
   });
 
   state.rows = Object.values(managerMap)
-    .filter(r => selectedManager === 'all' || r.manager_name === selectedManager)
     .filter(r => r.manager_name !== 'Без менеджера')
     .filter(r => r.fact_payments > 0 || r.new_deals_count > 0 || r.active_pipeline_amount > 0 || r.won_amount > 0 || r.range_plan_amount > 0);
 }
