@@ -167,25 +167,29 @@ function aggregateForRange() {
   });
 
   state.deals.forEach(row => {
-    const dt = parseLooseDate(row.date_create);
-    if (!dt) return;
-    if ((from && dt < from) || (to && dt > to)) return;
     const manager = ensure(row.manager_name);
     const amount = Number(row.amount || 0);
     const isWon = String(row.is_won || '') === 'Да';
     const isLost = String(row.is_lost || '') === 'Да';
+    const dateCreate = parseLooseDate(row.date_create);
+    const dateModify = parseLooseDate(row.date_modify || row.modify_date || row.close_date);
 
-    manager.new_deals_count += 1;
-    manager.new_deals_amount += amount;
-    if (!isWon && !isLost) {
-      manager.active_deals_count += 1;
-      manager.active_pipeline_amount += amount;
+    if (dateCreate && (!from || dateCreate >= from) && (!to || dateCreate <= to)) {
+      manager.new_deals_count += 1;
+      manager.new_deals_amount += amount;
+
+      if (!isWon && !isLost) {
+        manager.active_deals_count += 1;
+        manager.active_pipeline_amount += amount;
+      }
     }
-    if (isWon) {
+
+    if (isWon && dateModify && (!from || dateModify >= from) && (!to || dateModify <= to)) {
       manager.won_count += 1;
       manager.won_amount += amount;
     }
-    if (isLost) {
+
+    if (isLost && dateModify && (!from || dateModify >= from) && (!to || dateModify <= to)) {
       manager.lost_count += 1;
       manager.lost_amount += amount;
     }
